@@ -7,6 +7,7 @@ import { api } from "@/convex/_generated/api";
 import { ksh } from "@/lib/format";
 import { humanize } from "@/lib/errors";
 import Icon from "@/components/Icon";
+import OrderChat from "@/components/OrderChat";
 
 type Order = FunctionReturnType<typeof api.marketplaceOrders.forSeller>[number];
 
@@ -99,6 +100,7 @@ function SellerOrderCard({ order }: { order: Order }) {
   const [busy, setBusy] = useState(false);
   const [prep, setPrep] = useState(String(order.prepTimeMins ?? ""));
   const [showDelay, setShowDelay] = useState(false);
+  const [showChat, setShowChat] = useState(false);
 
   const actions = ACTIONS[order.status] ?? [];
   const isDelivery = order.fulfilment === "delivery";
@@ -156,6 +158,21 @@ function SellerOrderCard({ order }: { order: Order }) {
           {order.paymentStatus === "paid" ? "Paid" : order.paymentStatus === "refunded" ? "Refunded" : `${order.paymentMethod} · unpaid`}
         </p>
       </div>
+
+      {/* Chat with the customer (and rider once assigned) */}
+      <button
+        type="button"
+        onClick={() => setShowChat((s) => !s)}
+        className="mt-sm w-full flex items-center justify-center gap-1 border border-outline-variant text-on-surface-variant font-label-sm py-2 rounded-full"
+      >
+        <Icon name={showChat ? "expand_less" : "chat"} className="text-base" />
+        {showChat ? "Hide chat" : "Chat with customer"}
+      </button>
+      {showChat ? (
+        <div className="mt-sm bg-surface-container-low rounded-2xl p-sm">
+          <OrderChat orderId={order._id} />
+        </div>
+      ) : null}
 
       {/* Prep time */}
       {canSetPrep ? (

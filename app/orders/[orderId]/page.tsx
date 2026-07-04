@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -17,11 +18,16 @@ import {
   type JourneyView,
 } from "@/lib/journey";
 import Icon from "@/components/Icon";
+import OrderChat from "@/components/OrderChat";
+
+// Leaflet reads `window` at module scope — client-only.
+const RiderMap = dynamic(() => import("@/components/RiderMap"), { ssr: false });
 
 export default function OrderTrackingPage() {
   const params = useParams<{ orderId: string }>();
   const orderId = params.orderId as Id<"marketplaceOrders">;
   const data = useQuery(api.orderTracking.trackOrder, { orderId });
+  const riderLoc = useQuery(api.orderTracking.riderLocation, { orderId });
 
   if (data === undefined) {
     return (
@@ -91,6 +97,19 @@ export default function OrderTrackingPage() {
         </div>
       </section>
 
+      {/* Live rider position — appears once the rider starts sharing GPS */}
+      {riderLoc ? (
+        <section className="px-margin-mobile mt-sm">
+          <RiderMap
+            lat={riderLoc.lat}
+            lng={riderLoc.lng}
+            updatedAt={riderLoc.updatedAt}
+            riderName={rider?.name}
+            vehicleType={rider?.vehicleType}
+          />
+        </section>
+      ) : null}
+
       {/* 3 — Delivery stepper */}
       {!bad ? <Stepper view={view} /> : null}
 
@@ -134,6 +153,11 @@ export default function OrderTrackingPage() {
             </a>
           ) : null}
         </div>
+      </Card>
+
+      {/* Chat with the kibanda + rider */}
+      <Card title="Chat" icon="chat">
+        <OrderChat orderId={orderId} />
       </Card>
 
       {/* 6 — Items */}

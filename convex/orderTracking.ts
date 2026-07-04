@@ -93,6 +93,41 @@ export const trackOrder = query({
   },
 });
 
+/**
+ * Live rider position for the tracking map. Same ownership gate as trackOrder,
+ * and the same privacy window: coordinates exist only while the delivery is in
+ * an active state — once delivered/failed the query goes dark even though the
+ * row may still be in the table.
+ */
+export const riderLocation = query({
+  args: { orderId: v.string() },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return null;
+
+    const orderId = ctx.db.normalizeId("marketplaceOrders", args.orderId);
+    if (!orderId) return null;
+    const order = await ctx.db.get(orderId);
+    if (!order || !order.riderId) return null;
+
+    const profile = await getProfile(ctx);
+    const allowed =
+      order.customerId === userId ||
+      order.riderId === userId ||
+      profile?.role === "admin";
+    if (!allowed) return null;
+
+    if (!order.deliveryStatus || !ACTIVE_DELIVERY.has(order.deliveryStatus)) return null;
+
+    const loc = await ctx.db
+      .query("riderLocations")
+      .withIndex("by_order", (q) => q.eq("orderId", orderId))
+      .first();
+    if (!loc) return null;
+    return { lat: loc.lat, lng: loc.lng, updatedAt: loc.updatedAt };
+  },
+});
+
 const REPORT_REASONS = [
   "Order is taking too long",
   "Wrong or missing items",

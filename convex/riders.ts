@@ -379,7 +379,8 @@ export const reportDelay = mutation({
 });
 
 /**
- * GPS hook — present and gated, but NOT used by the UI yet (manual-first).
+ * GPS beacon target — called by the rider dashboard's "Share live location"
+ * toggle; the customer map reads it via orderTracking.riderLocation.
  * Refuses to store a location once the delivery is finished (privacy rule).
  */
 export const updateLocation = mutation({

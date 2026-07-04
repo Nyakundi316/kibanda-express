@@ -367,8 +367,10 @@ export default defineSchema({
     .index("by_order", ["orderId"])
     .index("by_rider", ["riderId"]),
 
-  // GPS-ready store. NOT written this phase (manual-first). The query layer
-  // refuses to return a location once the order is terminal (privacy rule).
+  // Live rider GPS, one row per (order, rider) — written by riders.updateLocation
+  // while the rider shares location, read by orderTracking.riderLocation for the
+  // customer map. The query layer refuses to return a location once the order is
+  // terminal (privacy rule).
   riderLocations: defineTable({
     riderId: v.id("users"),
     orderId: v.id("marketplaceOrders"),
@@ -414,6 +416,22 @@ export default defineSchema({
     read: v.boolean(),
     createdAt: v.number(),
   }).index("by_user", ["userId"]),
+
+  // Per-order thread between the customer, the seller, and the assigned rider
+  // ("have you started cooking?", "I'm at the gate", ...). Access is derived
+  // from the order itself — see orderChat.ts.
+  orderMessages: defineTable({
+    orderId: v.id("marketplaceOrders"),
+    senderId: v.id("users"),
+    senderRole: v.union(
+      v.literal("customer"),
+      v.literal("seller"),
+      v.literal("rider"),
+      v.literal("admin")
+    ),
+    body: v.string(),
+    createdAt: v.number(),
+  }).index("by_order", ["orderId"]),
 
   orderDisputes: defineTable({
     orderId: v.id("marketplaceOrders"),

@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import { ksh } from "@/lib/format";
 import { humanize } from "@/lib/errors";
 import Icon from "@/components/Icon";
+import OrderChat from "@/components/OrderChat";
 
 const TABS = ["Available", "Active", "Done"] as const;
 
@@ -117,6 +118,7 @@ function DeliveryCard({ order, pool }: { order: DeliveryOrder; pool: boolean }) 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [showDelay, setShowDelay] = useState(false);
+  const [showChat, setShowChat] = useState(false);
 
   const run = (fn: () => Promise<unknown>) => async () => {
     setBusy(true);
@@ -203,6 +205,28 @@ function DeliveryCard({ order, pool }: { order: DeliveryOrder; pool: boolean }) 
         )}
       </div>
 
+      {/* Live GPS beacon — feeds the customer's tracking map */}
+      {!pool && next ? <LocationBeacon orderId={order._id} /> : null}
+
+      {/* Chat with the customer/seller on accepted deliveries */}
+      {!pool ? (
+        <>
+          <button
+            type="button"
+            onClick={() => setShowChat((s) => !s)}
+            className="mt-2 w-full flex items-center justify-center gap-1 border border-outline-variant text-on-surface-variant font-label-sm py-2 rounded-full"
+          >
+            <Icon name={showChat ? "expand_less" : "chat"} className="text-base" />
+            {showChat ? "Hide chat" : "Chat"}
+          </button>
+          {showChat ? (
+            <div className="mt-2 bg-surface-container-low rounded-2xl p-sm">
+              <OrderChat orderId={order._id} />
+            </div>
+          ) : null}
+        </>
+      ) : null}
+
       {/* Delay reporting on active deliveries */}
       {!pool && next ? (
         showDelay ? (
@@ -231,6 +255,74 @@ function DeliveryCard({ order, pool }: { order: DeliveryOrder; pool: boolean }) 
 
       {err ? <p className="text-error font-label-sm mt-1">{err}</p> : null}
     </article>
+  );
+}
+
+/**
+ * Streams the rider's GPS to the customer's live map while toggled on.
+ * watchPosition fires on every device fix; we push at most one update every
+ * PUSH_INTERVAL to keep the mutation rate sane. Off by default — sharing
+ * location is the rider's call, and the browser permission prompt needs a
+ * user gesture anyway.
+ */
+const PUSH_INTERVAL = 10_000;
+
+function LocationBeacon({ orderId }: { orderId: DeliveryOrder["_id"] }) {
+  const updateLocation = useMutation(api.riders.updateLocation);
+  const [sharing, setSharing] = useState(false);
+  const [gpsError, setGpsError] = useState<string | null>(null);
+  const lastPush = useRef(0);
+
+  useEffect(() => {
+    if (!sharing) return;
+    if (!("geolocation" in navigator)) {
+      setGpsError("This device has no GPS support");
+      setSharing(false);
+      return;
+    }
+    const watch = navigator.geolocation.watchPosition(
+      (pos) => {
+        const now = Date.now();
+        if (now - lastPush.current < PUSH_INTERVAL) return;
+        lastPush.current = now;
+        updateLocation({
+          orderId,
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+        }).catch(() => {
+          // Delivery finished mid-watch — the mutation gate refused, stop quietly.
+          setSharing(false);
+        });
+      },
+      (e) => {
+        setGpsError(e.code === e.PERMISSION_DENIED ? "Location permission denied" : "Couldn't get a GPS fix");
+        setSharing(false);
+      },
+      { enableHighAccuracy: true, maximumAge: 5000 }
+    );
+    return () => navigator.geolocation.clearWatch(watch);
+  }, [sharing, orderId, updateLocation]);
+
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={() => {
+          setGpsError(null);
+          setSharing((s) => !s);
+        }}
+        className={`w-full flex items-center justify-center gap-1 font-label-sm py-2 rounded-full transition-colors ${
+          sharing
+            ? "bg-secondary-container text-on-secondary-container"
+            : "border border-outline-variant text-tertiary"
+        }`}
+      >
+        <Icon name={sharing ? "my_location" : "location_disabled"} className="text-base" />
+        {sharing ? "Sharing live location with customer" : "Share live location"}
+        {sharing ? <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse ml-1" /> : null}
+      </button>
+      {gpsError ? <p className="text-error font-label-sm mt-1 text-center">{gpsError}</p> : null}
+    </div>
   );
 }
 
