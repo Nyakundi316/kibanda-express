@@ -1,0 +1,10 @@
+project_id = "kibanda-express"
+
+# Auth mode "user" → the platform should gate on a valid JWT, so keep verify_jwt on.
+[functions.todos]
+verify_jwt = true
+
+# For functions using "publishable", "secret", or "none" auth modes, the request
+# won't carry a user JWT — disable the platform gate so it reaches withSupabase:
+# [functions.public-feed]
+# verify_jwt = false
