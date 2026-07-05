@@ -193,6 +193,12 @@ export default function OrderTrackingPage() {
           <span className="font-headline-md text-primary text-[18px] tabular-nums">{ksh(order.total)}</span>
         </div>
         <PaymentBadge method={order.paymentMethod} status={order.paymentStatus} />
+        {order.paymentMethod === "mpesa" &&
+        order.paymentStatus === "failed" &&
+        !isTerminalBad(order.status) &&
+        order.status !== "completed" ? (
+          <RetryPaymentButton orderId={orderId} />
+        ) : null}
       </Card>
 
       {/* Journey timeline (from audit history) */}
@@ -318,6 +324,42 @@ function PaymentBadge({ method, status }: { method: string; status: string }) {
     <p className={`mt-2 flex items-center gap-1 font-label-sm ${m.cls}`}>
       <Icon name={m.icon} className="text-base" /> {m.label}
     </p>
+  );
+}
+
+function RetryPaymentButton({ orderId }: { orderId: Id<"marketplaceOrders"> }) {
+  const retry = useMutation(api.marketplaceOrders.retryPayment);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const go = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await retry({ orderId });
+    } catch (e) {
+      setErr(humanize(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-sm">
+      <button
+        type="button"
+        onClick={go}
+        disabled={busy}
+        className="w-full bg-primary text-on-primary font-label-md py-2.5 rounded-full flex items-center justify-center gap-1 disabled:opacity-50 active:scale-[0.98] transition-transform"
+      >
+        <Icon name={busy ? "progress_activity" : "replay"} className={`text-lg ${busy ? "animate-spin" : ""}`} />
+        Retry M-Pesa payment
+      </button>
+      <p className="mt-1 text-center font-label-sm text-tertiary">
+        You&apos;ll get a new PIN prompt on your phone.
+      </p>
+      {err ? <p className="text-error font-label-sm mt-1 text-center">{err}</p> : null}
+    </div>
   );
 }
 

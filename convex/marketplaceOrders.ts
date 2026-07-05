@@ -339,3 +339,49 @@ export const cancelOrder = mutation({
     });
   },
 });
+
+/**
+ * Fire a fresh STK push after a failed M-Pesa attempt (phone unreachable,
+ * wrong PIN, timeout...). Creates a new payment row — the failed one stays
+ * as history — and flips the order back to pending so the UI shows
+ * "Awaiting M-Pesa" again while the new push is in flight.
+ */
+export const retryPayment = mutation({
+  args: { orderId: v.id("marketplaceOrders") },
+  handler: async (ctx, { orderId }) => {
+    const userId = await requireAuth(ctx);
+    const order = await ctx.db.get(orderId);
+    if (!order || order.customerId !== userId) throw new Error("Order not found");
+    if (order.paymentMethod !== "mpesa") throw new Error("This order is not paid via M-Pesa");
+    if (order.paymentStatus !== "failed")
+      throw new Error("There is no failed payment to retry");
+    if (["cancelled", "rejected", "completed"].includes(order.status))
+      throw new Error("This order is closed");
+
+    const now = Date.now();
+    const paymentId = await ctx.db.insert("payments", {
+      userId,
+      kind: "order",
+      amount: order.total,
+      currency: "KES",
+      status: "pending",
+      provider: "mpesa",
+      phone: order.customerPhone,
+      orderId,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await ctx.db.patch(orderId, {
+      paymentId,
+      paymentStatus: "pending",
+      updatedAt: now,
+    });
+    await ctx.scheduler.runAfter(0, internal.mpesa.initiateStk, {
+      paymentId,
+      phone: order.customerPhone,
+      amount: order.total,
+      accountRef: `ORDER-${order.shopName}`.slice(0, 12),
+      description: "Kibanda order",
+    });
+  },
+});

@@ -8,6 +8,7 @@ import { internal } from "./_generated/api";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { requireAuth, getSellerSubscription } from "./lib/rbac";
 import { normalizeMsisdn } from "./lib/phone";
+import { dispatch } from "./lib/notify";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -239,13 +240,33 @@ export const resolveMpesaCallback = internalMutation({
       updatedAt: Date.now(),
     });
 
-    // Customer order payment: mark the order paid on success.
+    // Customer order payment: reflect the result on the order either way —
+    // a failed STK push must not leave the buyer staring at "Awaiting M-Pesa".
     if (payment.kind === "order") {
-      if (!failed && payment.orderId) {
-        const order = await ctx.db.get(payment.orderId);
-        if (order && order.paymentStatus !== "paid") {
+      if (!payment.orderId) return;
+      const order = await ctx.db.get(payment.orderId);
+      if (!order) return;
+
+      if (!failed) {
+        if (order.paymentStatus !== "paid") {
           await ctx.db.patch(order._id, { paymentStatus: "paid", updatedAt: Date.now() });
+          await dispatch(ctx, {
+            userId: order.customerId,
+            orderId: order._id,
+            kind: "payment_received",
+            title: "Payment received",
+            body: `M-Pesa payment for order ${order.reference} confirmed. Asante!`,
+          });
         }
+      } else if (order.paymentStatus === "pending") {
+        await ctx.db.patch(order._id, { paymentStatus: "failed", updatedAt: Date.now() });
+        await dispatch(ctx, {
+          userId: order.customerId,
+          orderId: order._id,
+          kind: "payment_failed",
+          title: "Payment didn't go through",
+          body: `M-Pesa payment for order ${order.reference} failed (${args.resultDesc}). You can retry from the order page.`,
+        });
       }
       return;
     }

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuthActions } from "@convex-dev/auth/react";
-import { useMutation } from "convex/react";
+import { useConvexAuth, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { humanize } from "@/lib/errors";
 import Icon from "./Icon";
@@ -15,6 +15,7 @@ export default function AuthPanel({
   subtitle?: string;
 }) {
   const { signIn } = useAuthActions();
+  const { isAuthenticated } = useConvexAuth();
   const ensureProfile = useMutation(api.profiles.ensureProfile);
   const [flow, setFlow] = useState<"signIn" | "signUp">("signIn");
   const [email, setEmail] = useState("");
@@ -22,13 +23,20 @@ export default function AuthPanel({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Backstop for accounts that predate the afterUserCreatedOrUpdated callback.
+  // Runs only once the Convex connection is actually authenticated — calling
+  // it straight after signIn() races the token handshake and throws
+  // "Not authenticated" even though the sign-in succeeded.
+  useEffect(() => {
+    if (isAuthenticated) ensureProfile().catch(() => {});
+  }, [isAuthenticated, ensureProfile]);
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
       await signIn("password", { email, password, flow });
-      await ensureProfile();
     } catch (err) {
       setError(humanize(err));
     } finally {
